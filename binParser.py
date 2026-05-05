@@ -206,9 +206,90 @@ class Win32(File):
 
 
 # TODO: Create unified PE class that Win32 and Win64 can inherit from
-class Win64(File):
+class PE(File):
     def __init__(self, filename):
         super().__init__(filename)
+        self.filetype = "PE"
+        # TODO: convert individual headers to classes
+        self.IMAGE_DOS_HEADER = self.bytes[0:0x40]
+        self.parse_dos_header(self.IMAGE_DOS_HEADER)
+        self.IMAGE_DOS_STUB = self.bytes[0x40:0x80]
+        if (self.e_lfanew > 0x80):
+            self.IMAGE_RICH_HEADER = self.bytes[0x80:self.e_lfanew]
+        else:
+            self.IMAGE_RICH_HEADER = None
+        self.IMAGE_NT_HEADERS = self.bytes[self.e_lfanew:self.e_lfanew+100]
+        self.parse_nt_headers()
+        self.filetype = self.getStructure()
+    
+    def isValidPE(self):
+        if self.e_magic != b'MZ':               return False
+        elif self.Signature != b'PE\x00\x00':   return False
+        elif    ((self.Magic != b'\x0b\x01') and
+                (self.Magic != b'\x0b\x02') and 
+                (self.Magic != b'\x07\x01')):   return False
+        else:                                   return True
+
+    def getStructure():
+        return
+
+    # DOS header - same across 32-bit and 64-bit arch
+    # https://0xrick.github.io/win-internals/pe3/
+    def parse_dos_header(self, IMAGE_DOS_HEADER):
+        self.e_magic = IMAGE_DOS_HEADER[0:2]            # Magic number
+        self.e_cblp = IMAGE_DOS_HEADER[2:4]             # Bytes on last page of file
+        self.e_cp = IMAGE_DOS_HEADER[4:6]               # Pages in file
+        self.e_crlc = IMAGE_DOS_HEADER[6:8]             # Relocations
+        self.e_cparhdr = IMAGE_DOS_HEADER[8:0xa]        # Size of header in paragraphs
+        self.e_minalloc = IMAGE_DOS_HEADER[0xa:0xc]     # Minimum extra paragraphs needed
+        self.e_maxalloc = IMAGE_DOS_HEADER[0xc:0xe]     # Maximum extra paragraphs needed
+        self.e_ss = IMAGE_DOS_HEADER[0xe:0x10]          # Initial (relative) SS value
+        self.e_sp = IMAGE_DOS_HEADER[0x10:0x12]         # Initial SP value
+        self.e_csum = IMAGE_DOS_HEADER[0x12:0x14]       # Checksum
+        self.e_ip = IMAGE_DOS_HEADER[0x14:0x16]         # Initial IP value
+        self.e_cs = IMAGE_DOS_HEADER[0x16:0x18]         # Initial (relative) CS value
+        self.e_lfarlc = IMAGE_DOS_HEADER[0x18:0x1a]     # File address of relocation table
+        self.e_ovno = IMAGE_DOS_HEADER[0x1a:0x1c]       # Overlay number
+        self.e_res = IMAGE_DOS_HEADER[0x1c:0x24]        # Reserved words
+        self.e_oemid = IMAGE_DOS_HEADER[0x24:0x26]      # OEM identifier (for e_oeminfo)
+        self.e_oeminfo = IMAGE_DOS_HEADER[0x26:0x28]    # OEM information = IMAGE_DOS_HEADER[] # e_oemid specific
+        self.e_res2 = IMAGE_DOS_HEADER[0x28:0x3c]       # Reserved words
+        self.e_lfanew = IMAGE_DOS_HEADER[0x3c:0x40]     # File address of new exe header
+        self.e_lfanew = int.from_bytes(self.e_lfanew, byteorder='little')
+    
+    # not yet implemented
+    def parse_rich_header(self):
+        return
+    
+    # NT Headers - structure is the same except for optional header
+    # https://0xrick.github.io/win-internals/pe4/#nt-headers-image_nt_headers
+    def parse_nt_headers(self):
+        self.Signature = self.IMAGE_NT_HEADERS[0:4]
+        self.FileHeader = self.IMAGE_NT_HEADERS[4:0x18]
+        self.parse_coff_header(self.FileHeader)
+        # TODO: pull sizeOfOH from COFF Header
+        self.OptionalHeader = self.IMAGE_NT_HEADERS[0x18:0x18+self.SizeOfOptionalHeader]
+        # TODO: make inherited function parse the opt header
+        # self.parse_optional_header(self.OptionalHeader)
+
+    # File header/COFF header - same across PE32 and PE32+
+    # https://0xrick.github.io/win-internals/pe4/#file-header-image_file_header
+    def parse_coff_header(self, header):
+        # TODO: go through MS docs and get actual values for each
+        # byte representation of Machine
+        self.Machine =                  header[0x00:0x02]
+        self.NumberOfSections =         header[0x02:0x04]
+        # TODO: convert to actual timestamp
+        self.TimeDateStamp =            header[0x04:0x08]
+        self.PointerToSymbolTable =     header[0x08:0x0c]
+        self.NumberOfSymbols =          header[0x0c:0x10]
+        sizeOfOptionalHeader =          header[0x10:0x12]
+        self.SizeOfOptionalHeader =     int.from_bytes(sizeOfOptionalHeader, byteorder='little')
+        # TODO: go through MS docs and get actual values for each
+        # byte representation of Characteristics
+        self.Characteristics =          header[0x12:0x14]
+
+
         
 
 def main():
