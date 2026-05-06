@@ -1,3 +1,6 @@
+import textwrap
+import prodids
+
 class ByteStream:
     def __init__(self, bytes):
         self.bytes = bytes
@@ -245,23 +248,71 @@ class IMAGE_DOS_HEADER(ByteStream):
         return self.bytes[key]
 
 
-# Not yet implemented
+# https://0xrick.github.io/win-internals/pe3/#dos-stub
 class IMAGE_DOS_STUB(ByteStream):
     def __init__(self, rawBytes):
         self.bytes = rawBytes
+        self.message = str(rawBytes[0x0e:0x38])
     
     def __getitem__(self, key):
         return self.bytes[key]
     
 
-# Not yet implemented
+class RichHeaderId():
+    def __init__(self, rawIds):
+        self.buildId = int(rawIds[0][4:],16)
+        self.count = int(rawIds[1],16)
+        productIdNumeric = int(rawIds[0][0:4], 16)
+        try: 
+            self.productID = prodids.int_names[productIdNumeric]
+        except KeyError:
+            self.productID = "prodidUnknown"
+        self.vsVersion = prodids.vs_version(productIdNumeric)
+        return
+    def __str__(self):
+        return f"Compiled with {self.productID} in {self.vsVersion[0]} {self.vsVersion[1]}"
+        # alternative way of printing numbers pre-translation - useful for debugging
+        # return f"{str(int(self.rawIds[0][4:],16))}.{str(int(self.rawIds[0][0:4],16))}.{str(int(self.rawIds[1],16))}"
+        
+
+# https://0xrick.github.io/win-internals/pe3/#rich-header
 class IMAGE_RICH_HEADER(ByteStream):
     def __init__(self, rawBytes):
         self.bytes = rawBytes
+        data = rawBytes
+        key  = rawBytes[0x04:0x08]
+        rch_hdr = (IMAGE_RICH_HEADER.xor(data,key)).hex()
+        rch_hdr = textwrap.wrap(rch_hdr, 16)
+
+        self.signatures = []
+        for i in range(2,len(rch_hdr)):
+            tmp = textwrap.wrap(rch_hdr[i], 8)
+            f1 = IMAGE_RICH_HEADER.rev_endiannes(tmp[0])
+            f2 = IMAGE_RICH_HEADER.rev_endiannes(tmp[1])
+            self.signatures.append(RichHeaderId((f1, f2)))
+
+
+    def xor(data, key):
+        return bytearray( ((data[i] ^ key[i % len(key)]) for i in range(0, len(data))) )
+
+    def rev_endiannes(data):
+        tmp = [data[i:i+8] for i in range(0, len(data), 8)]
+        
+        for i in range(len(tmp)):
+            tmp[i] = "".join(reversed([tmp[i][x:x+2] for x in range(0, len(tmp[i]), 2)]))
+        
+        return "".join(tmp)
     
     def __getitem__(self, key):
         return super().__getitem__(key)
     
+    def __str__(self):
+        output = "RICH HEADER SIGNATURES EXTRACTED:\n"
+        for sig in self.signatures:
+            output += f"\t\_ {sig}\n"
+        # remove trailing newline
+        return output[:-1]
+
 
 # NT Headers - structure is the same except for optional header
 # https://0xrick.github.io/win-internals/pe4/#nt-headers-image_nt_headers
@@ -343,18 +394,21 @@ def main():
 
     exe1 = PE("./samples/pe32.exe")
     print(exe1)
-    print(exe1.isValidPE())
-    print(exe1.ntHeaders.Signature)
-    # print(exe1.Magic)
-    print(exe1.dosHeader)
-    print(exe1.dosStub)
-    print(exe1.richHeader)
-    print(exe1.ntHeaders)
+    print(exe1.dosStub.message)
+    # print(exe1.isValidPE())
+    # print(exe1.ntHeaders.Signature)
+    # # print(exe1.Magic)
+    # print(exe1.dosHeader)
+    # print(exe1.dosStub)
+    # print(exe1.richHeader)
+    # print(exe1.ntHeaders)
     print("======================================")
     
-    exe2 = PE("./samples/pe64.exe")
+    exe2 = PE("./samples/selenium-manager.exe")
     print(exe2)
-    print(exe2.filetype)
+    print(exe2.dosStub.message)
+    print(exe2.richHeader)
+    # print(exe2.filetype)
     print("======================================")
 
 if __name__ == "__main__":
