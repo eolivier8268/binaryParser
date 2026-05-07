@@ -323,9 +323,8 @@ class IMAGE_NT_HEADERS(ByteStream):
         self.coffHeader = COFF_HEADER(rawBytes[4:0x18])
         # self.parse_coff_header(self.FileHeader)
         # TODO: pull sizeOfOH from COFF Header
-        self.OptionalHeader = rawBytes[0x18:0x18+self.coffHeader.SizeOfOptionalHeader]
-        # TODO: make inherited function parse the opt header
-        # self.parse_optional_header(self.OptionalHeader)
+        optionalHeaderBytes = rawBytes[0x18:0x18+self.coffHeader.SizeOfOptionalHeader]
+        self.OptionalHeader = IMAGE_OPTIONAL_HEADER(optionalHeaderBytes)
 
 
 # File header/COFF header - same across PE32 and PE32+
@@ -348,6 +347,24 @@ class COFF_HEADER(ByteStream):
         self.Characteristics =          rawBytes[0x12:0x14]
 
 
+class IMAGE_OPTIONAL_HEADER(ByteStream):
+    def __init__(self, rawBytes):
+        self.bytes = rawBytes
+        self.Magic = rawBytes[0x00:0x02]
+        self.MajorLinkerVersion = rawBytes[0x02:0x03]
+        self.MinorLinkerVersion = rawBytes[0x03:0x04]
+        self.SizeOfCode = rawBytes[0x04:0x08]
+        self.SizeOfInitializedData = rawBytes[0x08:0x0c]
+        self.SizeOfUninitializedData = rawBytes[0xc:0x10]
+        self.AddressOfEntryPoint = rawBytes[0x10:0x14]
+        self.BaseOfCode = rawBytes[0x14:0x18]
+        self.BaseOfData = rawBytes[0x18:0x1c]
+        # TODO: add additional/optional fields
+        return
+    
+    def __getitem__(self, key):
+        return self.bytes[key]
+
 # TODO: Create unified PE class that Win32 and Win64 can inherit from
 class PE(File):
     def __init__(self, filename):
@@ -366,9 +383,9 @@ class PE(File):
     def isValidPE(self):
         if self.dosHeader.e_magic != b'MZ':               return False
         elif self.ntHeaders.Signature != b'PE\x00\x00':   return False
-        # elif    ((self.ntHeaders.OptionalHeader.Magic != b'\x0b\x01') and
-        #         (self.ntHeaders.OptionalHeader.Magic != b'\x0b\x02') and 
-        #         (self.ntHeaders.OptionalHeader.Magic != b'\x07\x01')):   return False
+        elif    ((self.ntHeaders.OptionalHeader.Magic != b'\x0b\x01') and
+                (self.ntHeaders.OptionalHeader.Magic != b'\x0b\x02') and 
+                (self.ntHeaders.OptionalHeader.Magic != b'\x07\x01')):   return False
         else:                                   return True
 
     def getStructure(self):
@@ -394,8 +411,8 @@ def main():
 
     exe1 = PE("./samples/pe32.exe")
     print(exe1)
-    print(exe1.dosStub.message)
-    # print(exe1.isValidPE())
+    # print(exe1.dosStub.message)
+    print(exe1.isValidPE())
     # print(exe1.ntHeaders.Signature)
     # # print(exe1.Magic)
     # print(exe1.dosHeader)
@@ -406,8 +423,9 @@ def main():
     
     exe2 = PE("./samples/selenium-manager.exe")
     print(exe2)
-    print(exe2.dosStub.message)
-    print(exe2.richHeader)
+    # print(exe2.dosStub.message)
+    # print(exe2.richHeader)
+    print(exe2.isValidPE())
     # print(exe2.filetype)
     print("======================================")
 
