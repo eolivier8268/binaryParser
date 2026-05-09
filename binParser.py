@@ -31,9 +31,16 @@ class ByteStream:
 
 class File(ByteStream):
     filetype = "file"
-    def __init__(self, filename):
+    def __init__(self, filename, bytes):
+        self.filename = filename
+        self.bytes = bytes
+
+    @classmethod
+    def read_bytes(cls, filename):
+        rawBytes = b''
         with open(filename, "rb") as f:
-            self.bytes = f.read()
+            rawBytes = f.read()
+        return cls(filename, rawBytes)
 
 
 class Text(File):
@@ -43,47 +50,54 @@ class Text(File):
 
 
 class ElfIdentificationHeader(ByteStream):
-    def __init__(self, bytes):
+    def __init__(self, bytes, EI_CLASS, EI_DATA, EI_VERSION, EI_OSABI, EI_ABIVERSION):
+        self.bytes = bytes
+        self.EI_CLASS = EI_CLASS
+        self.EI_DATA = EI_DATA
+        self.EI_VERSION = EI_VERSION
+        self.EI_OSABI = EI_OSABI
+        self.EI_ABIVERSION = EI_ABIVERSION
+
+    @classmethod
+    def parse_bytes(cls, bytes):
         if (bytes[4] == 1):
-            self.EI_CLASS = "ELFCLASS32"
+            EI_CLASS = "ELFCLASS32"
         elif (bytes[4] == 2):
-            self.EI_CLASS = "ELFCLASS64"
+            EI_CLASS = "ELFCLASS64"
         else:
-            self.EI_CLASS = "ELFCLASSNONE"
+            EI_CLASS = "ELFCLASSNONE"
         # parse endianness from the header
         if (bytes[5] == 1):
-            self.EI_DATA = "ELFDATA2LSB"
+            EI_DATA = "ELFDATA2LSB"
         elif (bytes[5] == 2):
-            self.EI_DATA = "ELFDATA2MSB"
+            EI_DATA = "ELFDATA2MSB"
         else:
-            self.EI_DATA = "ELFDATANONE"
+            EI_DATA = "ELFDATANONE"
         # parse version from the header
         if (bytes[6] == 1):
-            self.EI_VERSION = "EV_CURRENT"
+            EI_VERSION = "EV_CURRENT"
         else:
-            self.EI_VERSION = "EV_NONE"
+            EI_VERSION = "EV_NONE"
         # parse the ABI
-        if (bytes[7] == 0):      self.EI_OSABI = "ELFOSABI_NONE"
-        elif (bytes[7] == 1):    self.EI_OSABI = "ELFOSABI_HPUX"
-        elif (bytes[7] == 2):    self.EI_OSABI = "ELFOSABI_NETBSD"
-        elif (bytes[7] == 3):    self.EI_OSABI = "ELFOSABI_LINUX"
+        if (bytes[7] == 0):      EI_OSABI = "ELFOSABI_NONE"
+        elif (bytes[7] == 1):    EI_OSABI = "ELFOSABI_HPUX"
+        elif (bytes[7] == 2):    EI_OSABI = "ELFOSABI_NETBSD"
+        elif (bytes[7] == 3):    EI_OSABI = "ELFOSABI_LINUX"
         # 4, 5 not implemented
-        elif (bytes[7] == 6):    self.EI_OSABI = "ELFOSABI_SOLARIS"
-        elif (bytes[7] == 7):    self.EI_OSABI = "ELFOSABI_AIX"
-        elif (bytes[7] == 8):    self.EI_OSABI = "ELFOSABI_IRIX"
-        elif (bytes[7] == 9):    self.EI_OSABI = "ELFOSABI_FREEBSD"
-        elif (bytes[7] == 10):   self.EI_OSABI = "ELFOSABI_TRU64"
-        elif (bytes[7] == 11):   self.EI_OSABI = "ELFOSABI_MODESTO"
-        elif (bytes[7] == 12):   self.EI_OSABI = "ELFOSABI_OPENBSD"
-        elif (bytes[7] == 13):   self.EI_OSABI = "ELFOSABI_OPENVMS"
-        elif (bytes[7] == 14):   self.EI_OSABI = "ELFOSABI_NSK"
-        else:                    self.EI_OSABI = "ELFOSABI_NONE"
+        elif (bytes[7] == 6):    EI_OSABI = "ELFOSABI_SOLARIS"
+        elif (bytes[7] == 7):    EI_OSABI = "ELFOSABI_AIX"
+        elif (bytes[7] == 8):    EI_OSABI = "ELFOSABI_IRIX"
+        elif (bytes[7] == 9):    EI_OSABI = "ELFOSABI_FREEBSD"
+        elif (bytes[7] == 10):   EI_OSABI = "ELFOSABI_TRU64"
+        elif (bytes[7] == 11):   EI_OSABI = "ELFOSABI_MODESTO"
+        elif (bytes[7] == 12):   EI_OSABI = "ELFOSABI_OPENBSD"
+        elif (bytes[7] == 13):   EI_OSABI = "ELFOSABI_OPENVMS"
+        elif (bytes[7] == 14):   EI_OSABI = "ELFOSABI_NSK"
+        else:                    EI_OSABI = "ELFOSABI_NONE"
         # ABI-specific field
-        self.EI_ABIVERSION = bytes[8]
+        EI_ABIVERSION = bytes[8]
 
-        # store the byte object AFTER parsing to avoid confusion with
-        # two identically names `bytes` objects
-        self.bytes = bytes
+        return cls(bytes, EI_CLASS, EI_DATA, EI_VERSION, EI_OSABI, EI_ABIVERSION)
 
     def __getitem__(self, key):
         return self.bytes[key]
@@ -91,33 +105,45 @@ class ElfIdentificationHeader(ByteStream):
 
 # https://refspecs.linuxfoundation.org/elf/gabi4+/ch4.eheader.html
 class Elf(File):
-    def __init__(self, filename):
-        super().__init__(filename)
-        # parse the ELF ID header
-        self.header = ElfIdentificationHeader(self.bytes[0:17])
-        # once header has parsed, getStructure and its child functions will work
-        self.filetype = self.getStructure()
+    def __init__(self, filename, bytes, header):
+        self.filename = filename
+        self.bytes = bytes
+        self.header = header
 
-    def getBitness(self):
+    @classmethod
+    def from_file(cls, filename):
+        rawBytes = cls.read_bytes(filename)
+        header = ElfIdentificationHeader.parse_bytes(rawBytes[0:17])
+        return cls(filename, rawBytes, header)
+
+    @staticmethod
+    def read_bytes(filename):
+        rawBytes = b''
+        with open(filename, "rb") as f:
+            rawBytes = f.read()
+        return rawBytes
+
+    def get_bitness(self):
         if (self.header.EI_CLASS == "ELFCLASSNONE"):
             return None
         else:
             bitnessAsInt = int(self.header.EI_CLASS[8:10])
             return bitnessAsInt
     
-    def getEndianness(self):
+    def get_endianness(self):
         if self.header.EI_DATA == "ELFDATANONE":
             return None
         else:
             return self.header.EI_DATA[8:11]
     
-    def getStructure(self):
-        if (self.isValidElf()):
-            return(f"ELF {self.getBitness()}-bit {self.getEndianness()} executable")
+    @property
+    def structure(self):
+        if (self.is_valid_elf()):
+            return(f"ELF {self.get_bitness()}-bit {self.get_endianness()} executable")
         else:
             return "Malformed ELF file"
     
-    def isValidElf(self):
+    def is_valid_elf(self):
         padding = int.from_bytes(self.header[9:16])
         if (self.header[0] != 0x7f):       return False
         elif (self.header[1] != ord("E")): return False
@@ -347,6 +373,8 @@ class COFF_HEADER(ByteStream):
         self.Characteristics =          rawBytes[0x12:0x14]
 
 
+# Optional header - need to separate 32-bit and 64-bit versions
+# https://0xrick.github.io/win-internals/pe4/#optional-header-image_optional_header
 class IMAGE_OPTIONAL_HEADER(ByteStream):
     def __init__(self, rawBytes):
         self.bytes = rawBytes
@@ -399,35 +427,37 @@ def main():
     print()
     print("======================================")
     
-    testelf2 = Elf("./samples/test-elf")
+    testelf2 = Elf.from_file("./samples/test-elf")
     print(testelf2)
     print(testelf2.filetype)
+    print(testelf2.structure)
     print("======================================")
     
-    atm = Elf("./samples/atm")
+    atm = Elf.from_file("./samples/atm")
     print(atm)
     print(atm.filetype)
+    print(atm.structure)
     print("======================================")
 
-    exe1 = PE("./samples/pe32.exe")
-    print(exe1)
+    # exe1 = PE("./samples/pe32.exe")
+    # print(exe1)
     # print(exe1.dosStub.message)
-    print(exe1.isValidPE())
+    # print(exe1.isValidPE())
     # print(exe1.ntHeaders.Signature)
     # # print(exe1.Magic)
     # print(exe1.dosHeader)
     # print(exe1.dosStub)
     # print(exe1.richHeader)
     # print(exe1.ntHeaders)
-    print("======================================")
+    # print("======================================")
     
-    exe2 = PE("./samples/selenium-manager.exe")
-    print(exe2)
+    # exe2 = PE("./samples/selenium-manager.exe")
+    # print(exe2)
     # print(exe2.dosStub.message)
     # print(exe2.richHeader)
-    print(exe2.isValidPE())
+    # print(exe2.isValidPE())
     # print(exe2.filetype)
-    print("======================================")
+    # print("======================================")
 
 if __name__ == "__main__":
     main()
