@@ -296,7 +296,7 @@ class IMAGE_NT_HEADERS(ByteStream):
         self.Signature = rawBytes[0:4]
         self.coffHeader = COFF_HEADER.from_bytes(rawBytes[4:0x18])
         optionalHeaderBytes = rawBytes[
-            0x18 : 0x18 + self.coffHeader.sizeOfOptionalHeader
+            0x18 : 0x18 + self.coffHeader.SizeOfOptionalHeader
         ]
         self.OptionalHeader = IMAGE_OPTIONAL_HEADER.from_bytes(optionalHeaderBytes)
 
@@ -352,7 +352,6 @@ class COFF_HEADER(ByteStream):
         )
 
 
-# Optional header - need to separate 32-bit and 64-bit versions
 # https://0xrick.github.io/win-internals/pe4/#optional-header-image_optional_header
 class IMAGE_OPTIONAL_HEADER(ByteStream):
     def __init__(
@@ -366,7 +365,6 @@ class IMAGE_OPTIONAL_HEADER(ByteStream):
         sizeOfUninitializedData,
         addressOfEntryPoint,
         baseOfCode,
-        baseOfData,
     ):
         self.bytes = bytes
         self.Magic = magic
@@ -377,23 +375,82 @@ class IMAGE_OPTIONAL_HEADER(ByteStream):
         self.SizeOfUninitializedData = sizeOfUninitializedData
         self.AddressOfEntryPoint = addressOfEntryPoint
         self.BaseOfCode = baseOfCode
-        self.BaseOfData = baseOfData
+
+    @classmethod
+    def dispatcher(cls, magic, sharedFields, optionalRawBytes, rawBytes):
+        if magic == b"\x0b\x01":
+            return IMAGE_OPTIONAL_HEADER32.factory(
+                sharedFields, optionalRawBytes, rawBytes
+            )
+        elif magic == b"\x0b\x02":
+            return IMAGE_OPTIONAL_HEADER64.factory(
+                sharedFields, optionalRawBytes, rawBytes
+            )
+        else:
+            return None
+
+    @staticmethod
+    def _parse_shared_fields(rawBytes):
+        return {
+            "magic": rawBytes[0x00:0x02],
+            "majorLinkerVersion": rawBytes[0x02:0x03],
+            "minorLinkerVersion": rawBytes[0x03:0x04],
+            "sizeOfCode": rawBytes[0x04:0x08],
+            "sizeOfInitializedData": rawBytes[0x08:0x0C],
+            "sizeOfUninitializedData": rawBytes[0xC:0x10],
+            "addressOfEntryPoint": rawBytes[0x10:0x14],
+            "baseOfCode": rawBytes[0x14:0x18],
+        }
 
     @classmethod
     def from_bytes(cls, rawBytes):
-        bytes = rawBytes
         magic = rawBytes[0x00:0x02]
-        majorLinkerVersion = rawBytes[0x02:0x03]
-        minorLinkerVersion = rawBytes[0x03:0x04]
-        sizeOfCode = rawBytes[0x04:0x08]
-        sizeOfInitializedData = rawBytes[0x08:0x0C]
-        sizeOfUninitializedData = rawBytes[0xC:0x10]
-        addressOfEntryPoint = rawBytes[0x10:0x14]
-        baseOfCode = rawBytes[0x14:0x18]
-        baseOfData = rawBytes[0x18:0x1C]
-        # TODO: add additional/optional fields
-        return cls(
-            bytes,
+        sharedFields = cls._parse_shared_fields(rawBytes[0x00:0x18])
+        return cls.dispatcher(magic, sharedFields, rawBytes[0x18:], rawBytes)
+
+    def __getitem__(self, key):
+        return self.bytes[key]
+
+
+# Optional header for 32-bit PE
+class IMAGE_OPTIONAL_HEADER32(IMAGE_OPTIONAL_HEADER):
+    def __init__(
+        self,
+        rawBytes,
+        magic,
+        majorLinkerVersion,
+        minorLinkerVersion,
+        sizeOfCode,
+        sizeOfInitializedData,
+        sizeOfUninitializedData,
+        addressOfEntryPoint,
+        baseOfCode,
+        baseOfData,
+        imageBase,
+        sectionAlignment,
+        fileAlignment,
+        majorOperatingSystemVersion,
+        minorOperatingSystemVersion,
+        majorImageVersion,
+        minorImageVersion,
+        majorSubsystemVersion,
+        minorSubsystemVersion,
+        win32VersionValue,
+        sizeOfImage,
+        sizeOfHeaders,
+        checkSum,
+        subsystem,
+        dllCharacteristics,
+        sizeOfStackReserve,
+        sizeOfStackCommit,
+        sizeOfHeapReserve,
+        sizeOfHeapCommit,
+        loaderFlags,
+        numberOfRvaAndSizes,
+        dataDirectory,
+    ):
+        super().__init__(
+            rawBytes,
             magic,
             majorLinkerVersion,
             minorLinkerVersion,
@@ -401,12 +458,230 @@ class IMAGE_OPTIONAL_HEADER(ByteStream):
             sizeOfInitializedData,
             sizeOfUninitializedData,
             addressOfEntryPoint,
-            baseOfCode,
+            baseOfCode
+        )
+        self.BaseOfData = baseOfData
+        self.ImageBase = imageBase
+        self.SectionAlignment = sectionAlignment
+        self.fileAlignment = fileAlignment
+        self.majorOperatingSystemVersion = majorOperatingSystemVersion
+        self.minorOperatingSystemVersion = minorOperatingSystemVersion
+        self.majorImageVersion = majorImageVersion
+        self.minorImageVersion = minorImageVersion
+        self.majorSubsystemVersion = majorSubsystemVersion
+        self.minorSubsystemVersion = minorSubsystemVersion
+        self.win32VersionValue = win32VersionValue
+        self.sizeOfImage = sizeOfImage
+        self.sizeOfHeaders = sizeOfHeaders
+        self.checkSum = checkSum
+        self.subsystem = subsystem
+        self.dllCharacteristics = dllCharacteristics
+        self.sizeOfStackReserve = sizeOfStackReserve
+        self.sizeOfStackCommit = sizeOfStackCommit
+        self.sizeOfHeapReserve = sizeOfHeapReserve
+        self.sizeOfHeapCommit = sizeOfHeapCommit
+        self.loaderFlags = loaderFlags
+        self.numberOfRvaAndSizes = numberOfRvaAndSizes
+        self.dataDirectory = dataDirectory
+        return
+
+    @classmethod
+    def factory(cls, sharedObjects, additionalFieldBytes, rawBytes):
+        baseOfData = additionalFieldBytes[0x00:0x04]
+        imageBase = additionalFieldBytes[0x04:0x08]
+        sectionAlignment = additionalFieldBytes[0x08:0x0C]
+        fileAlignment = additionalFieldBytes[0x0C:0x10]
+        majorOperatingSystemVersion = additionalFieldBytes[0x10:0x12]
+        minorOperatingSystemVersion = additionalFieldBytes[0x12:0x14]
+        majorImageVersion = additionalFieldBytes[0x14:0x16]
+        minorImageVersion = additionalFieldBytes[0x16:0x18]
+        majorSubsystemVersion = additionalFieldBytes[0x18:0x1C]
+        minorSubsystemVersion = additionalFieldBytes[0x1C:0x1E]
+        win32VersionValue = additionalFieldBytes[0x1E:0x22]
+        sizeOfImage = additionalFieldBytes[0x22:0x26]
+        sizeOfHeaders = additionalFieldBytes[0x26:0x2A]
+        checkSum = additionalFieldBytes[0x2A:0x2E]
+        subsystem = additionalFieldBytes[0x2E:0x32]
+        dllCharacteristics = additionalFieldBytes[0x32:0x34]
+        sizeOfStackReserve = additionalFieldBytes[0x34:0x38]
+        sizeOfStackCommit = additionalFieldBytes[0x38:0x3C]
+        sizeOfHeapReserve = additionalFieldBytes[0x3C:0x40]
+        sizeOfHeapCommit = additionalFieldBytes[0x40:0x44]
+        loaderFlags = additionalFieldBytes[0x44:0x48]
+        numberOfRvaAndSizes = additionalFieldBytes[0x48:0x4C]
+        dataDirectory = additionalFieldBytes[0x4C:]
+        return cls(
+            rawBytes,
+            sharedObjects["magic"],
+            sharedObjects["majorLinkerVersion"],
+            sharedObjects["minorLinkerVersion"],
+            sharedObjects["sizeOfCode"],
+            sharedObjects["sizeOfInitializedData"],
+            sharedObjects["sizeOfUninitializedData"],
+            sharedObjects["addressOfEntryPoint"],
+            sharedObjects["baseOfCode"],
             baseOfData,
+            imageBase,
+            sectionAlignment,
+            fileAlignment,
+            majorOperatingSystemVersion,
+            minorOperatingSystemVersion,
+            majorImageVersion,
+            minorImageVersion,
+            majorSubsystemVersion,
+            minorSubsystemVersion,
+            win32VersionValue,
+            sizeOfImage,
+            sizeOfHeaders,
+            checkSum,
+            subsystem,
+            dllCharacteristics,
+            sizeOfStackReserve,
+            sizeOfStackCommit,
+            sizeOfHeapReserve,
+            sizeOfHeapCommit,
+            loaderFlags,
+            numberOfRvaAndSizes,
+            dataDirectory,
         )
 
-    def __getitem__(self, key):
-        return self.bytes[key]
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        return super().from_bytes(rawBytes)
+
+
+# Optional header for 64-bit PE
+class IMAGE_OPTIONAL_HEADER64(IMAGE_OPTIONAL_HEADER):
+    def __init__(
+        self,
+        rawBytes,
+        magic,
+        majorLinkerVersion,
+        minorLinkerVersion,
+        sizeOfCode,
+        sizeOfInitializedData,
+        sizeOfUninitializedData,
+        addressOfEntryPoint,
+        baseOfCode,
+        imageBase,
+        sectionAlignment,
+        fileAlignment,
+        majorOperatingSystemVersion,
+        minorOperatingSystemVersion,
+        majorImageVersion,
+        minorImageVersion,
+        majorSubsystemVersion,
+        minorSubsystemVersion,
+        win32VersionValue,
+        sizeOfImage,
+        sizeOfHeaders,
+        checkSum,
+        subsystem,
+        dllCharacteristics,
+        sizeOfStackReserve,
+        sizeOfStackCommit,
+        sizeOfHeapReserve,
+        sizeOfHeapCommit,
+        loaderFlags,
+        numberOfRvaAndSizes,
+        dataDirectory,
+    ):
+        super().__init__(
+            rawBytes,
+            magic,
+            majorLinkerVersion,
+            minorLinkerVersion,
+            sizeOfCode,
+            sizeOfInitializedData,
+            sizeOfUninitializedData,
+            addressOfEntryPoint,
+            baseOfCode
+        )
+        self.ImageBase = imageBase
+        self.SectionAlignment = sectionAlignment
+        self.fileAlignment = fileAlignment
+        self.majorOperatingSystemVersion = majorOperatingSystemVersion
+        self.minorOperatingSystemVersion = minorOperatingSystemVersion
+        self.majorImageVersion = majorImageVersion
+        self.minorImageVersion = minorImageVersion
+        self.majorSubsystemVersion = majorSubsystemVersion
+        self.minorSubsystemVersion = minorSubsystemVersion
+        self.win32VersionValue = win32VersionValue
+        self.sizeOfImage = sizeOfImage
+        self.sizeOfHeaders = sizeOfHeaders
+        self.checkSum = checkSum
+        self.subsystem = subsystem
+        self.dllCharacteristics = dllCharacteristics
+        self.sizeOfStackReserve = sizeOfStackReserve
+        self.sizeOfStackCommit = sizeOfStackCommit
+        self.sizeOfHeapReserve = sizeOfHeapReserve
+        self.sizeOfHeapCommit = sizeOfHeapCommit
+        self.loaderFlags = loaderFlags
+        self.numberOfRvaAndSizes = numberOfRvaAndSizes
+        self.dataDirectory = dataDirectory
+        return
+
+    @classmethod
+    def factory(cls, sharedObjects, additionalFieldBytes, rawBytes):
+        imageBase = additionalFieldBytes[0x00:0x08]
+        sectionAlignment = additionalFieldBytes[0x08:0x0C]
+        fileAlignment = additionalFieldBytes[0x0C:0x10]
+        majorOperatingSystemVersion = additionalFieldBytes[0x10:0x12]
+        minorOperatingSystemVersion = additionalFieldBytes[0x12:0x14]
+        majorImageVersion = additionalFieldBytes[0x14:0x16]
+        minorImageVersion = additionalFieldBytes[0x16:0x18]
+        majorSubsystemVersion = additionalFieldBytes[0x18:0x1A]
+        minorSubsystemVersion = additionalFieldBytes[0x1A:0x1C]
+        win32VersionValue = additionalFieldBytes[0x1C:0x20]
+        sizeOfImage = additionalFieldBytes[0x20:0x24]
+        sizeOfHeaders = additionalFieldBytes[0x24:0x28]
+        checkSum = additionalFieldBytes[0x28:0x2C]
+        subsystem = additionalFieldBytes[0x2C:0x2E]
+        dllCharacteristics = additionalFieldBytes[0x2E:0x30]
+        sizeOfStackReserve = additionalFieldBytes[0x30:0x38]
+        sizeOfStackCommit = additionalFieldBytes[0x38:0x40]
+        sizeOfHeapReserve = additionalFieldBytes[0x40:0x48]
+        sizeOfHeapCommit = additionalFieldBytes[0x48:0x50]
+        loaderFlags = additionalFieldBytes[0x50:0x54]
+        numberOfRvaAndSizes = additionalFieldBytes[0x54:0x58]
+        dataDirectory = additionalFieldBytes[0x58:]
+        return cls(
+            rawBytes,
+            sharedObjects["magic"],
+            sharedObjects["majorLinkerVersion"],
+            sharedObjects["minorLinkerVersion"],
+            sharedObjects["sizeOfCode"],
+            sharedObjects["sizeOfInitializedData"],
+            sharedObjects["sizeOfUninitializedData"],
+            sharedObjects["addressOfEntryPoint"],
+            sharedObjects["baseOfCode"],
+            imageBase,
+            sectionAlignment,
+            fileAlignment,
+            majorOperatingSystemVersion,
+            minorOperatingSystemVersion,
+            majorImageVersion,
+            minorImageVersion,
+            majorSubsystemVersion,
+            minorSubsystemVersion,
+            win32VersionValue,
+            sizeOfImage,
+            sizeOfHeaders,
+            checkSum,
+            subsystem,
+            dllCharacteristics,
+            sizeOfStackReserve,
+            sizeOfStackCommit,
+            sizeOfHeapReserve,
+            sizeOfHeapCommit,
+            loaderFlags,
+            numberOfRvaAndSizes,
+            dataDirectory,
+        )
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        return super().from_bytes(rawBytes)
 
 
 # TODO: Create unified PE class that Win32 and Win64 can inherit from
@@ -477,6 +752,17 @@ class PE(File):
             return True
 
     @property
+    def bitness(self):
+        if self.optionalHeader.Magic == b"\x0b\x01":
+            return "32-bit"
+        elif self.optionalHeader.Magic == b"\x0b\x02":
+            return "64-bit"
+        elif self.optionalHeader.Magic == b"\x07\x01":
+            return "ROM Image"
+        else:
+            return "unknown"
+
+    @property
     def structure(self):
         return None
 
@@ -502,22 +788,38 @@ def main():
 
     exe1 = PE.from_file("./samples/pe32.exe")
     print(exe1)
-    print(exe1.dosStub.message)
-    print(exe1.is_valid_PE())
-    print(exe1.ntHeaders.Signature)
+    print(exe1.coffHeader.SizeOfOptionalHeader)
+    # print(exe1.dosStub.message)
+    # print(exe1.is_valid_PE())
+    # print(exe1.ntHeaders.Signature)
     print(exe1.optionalHeader.Magic)
-    print(exe1.dosHeader)
-    print(exe1.dosStub)
-    print(exe1.richHeader)
-    print(exe1.ntHeaders)
+    # print(exe1.bitness)
+    # print(exe1.dosHeader)
+    # print(exe1.dosStub)
+    # print(exe1.richHeader)
+    # print(exe1.ntHeaders)
     print("======================================")
 
     exe2 = PE.from_file("./samples/selenium-manager.exe")
     print(exe2)
-    print(exe2.dosStub.message)
-    print(exe2.richHeader)
-    print(exe2.is_valid_PE())
-    print(exe2.filetype)
+    print(exe2.coffHeader.SizeOfOptionalHeader)
+    print(exe2.optionalHeader)
+    # print(exe2.bitness)
+    # print(exe2.dosStub.message)
+    # print(exe2.richHeader)
+    # print(exe2.is_valid_PE())
+    # print(exe2.filetype)
+    print("======================================")
+
+    exe64 = PE.from_file("./samples/notepad.exe")
+    print(exe64)
+    print(exe64.coffHeader.SizeOfOptionalHeader)
+    print(exe64.optionalHeader)
+    # print(exe64.bitness)
+    # print(exe2.dosStub.message)
+    # print(exe2.richHeader)
+    # print(exe2.is_valid_PE())
+    # print(exe2.filetype)
     print("======================================")
 
 
