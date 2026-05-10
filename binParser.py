@@ -294,51 +294,116 @@ class IMAGE_NT_HEADERS(ByteStream):
     def __init__(self, rawBytes):
         self.bytes = rawBytes
         self.Signature = rawBytes[0:4]
-        self.coffHeader = COFF_HEADER(rawBytes[4:0x18])
+        self.coffHeader = COFF_HEADER.from_bytes(rawBytes[4:0x18])
         optionalHeaderBytes = rawBytes[
-            0x18 : 0x18 + self.coffHeader.SizeOfOptionalHeader
+            0x18 : 0x18 + self.coffHeader.sizeOfOptionalHeader
         ]
-        self.OptionalHeader = IMAGE_OPTIONAL_HEADER(optionalHeaderBytes)
+        self.OptionalHeader = IMAGE_OPTIONAL_HEADER.from_bytes(optionalHeaderBytes)
 
 
 # File header/COFF header - same across PE32 and PE32+
 # https://0xrick.github.io/win-internals/pe4/#file-header-image_file_header
 class COFF_HEADER(ByteStream):
-    def __init__(self, rawBytes):
-        self.bytes = rawBytes
+    def __init__(
+        self,
+        bytes,
+        machine,
+        numberOfSections,
+        timeDateStamp,
+        pointerToSymbolTable,
+        numberOfSymbols,
+        sizeOfOptionalHeader,
+        characteristics,
+    ):
+        self.bytes = bytes
+        self.Machine = machine
+        self.NumberOfSections = numberOfSections
+        self.TimeDateStamp = timeDateStamp
+        self.PointerToSymbolTable = pointerToSymbolTable
+        self.NumberOfSymbols = numberOfSymbols
+        self.SizeOfOptionalHeader = sizeOfOptionalHeader
+        self.Characteristics = characteristics
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        bytes = rawBytes
         # TODO: go through MS docs and get actual values for each
         # byte representation of Machine
-        self.Machine = rawBytes[0x00:0x02]
-        self.NumberOfSections = rawBytes[0x02:0x04]
+        machine = rawBytes[0x00:0x02]
+        numberOfSections = rawBytes[0x02:0x04]
         # TODO: convert to actual timestamp
-        self.TimeDateStamp = rawBytes[0x04:0x08]
-        self.PointerToSymbolTable = rawBytes[0x08:0x0C]
-        self.NumberOfSymbols = rawBytes[0x0C:0x10]
+        timeDateStamp = rawBytes[0x04:0x08]
+        pointerToSymbolTable = rawBytes[0x08:0x0C]
+        numberOfSymbols = rawBytes[0x0C:0x10]
         sizeOfOptionalHeader = rawBytes[0x10:0x12]
-        self.SizeOfOptionalHeader = int.from_bytes(
-            sizeOfOptionalHeader, byteorder="little"
-        )
+        sizeOfOptionalHeader = int.from_bytes(sizeOfOptionalHeader, byteorder="little")
         # TODO: go through MS docs and get actual values for each
         # byte representation of Characteristics
-        self.Characteristics = rawBytes[0x12:0x14]
+        characteristics = rawBytes[0x12:0x14]
+        return cls(
+            bytes,
+            machine,
+            numberOfSections,
+            timeDateStamp,
+            pointerToSymbolTable,
+            numberOfSymbols,
+            sizeOfOptionalHeader,
+            characteristics,
+        )
 
 
 # Optional header - need to separate 32-bit and 64-bit versions
 # https://0xrick.github.io/win-internals/pe4/#optional-header-image_optional_header
 class IMAGE_OPTIONAL_HEADER(ByteStream):
-    def __init__(self, rawBytes):
-        self.bytes = rawBytes
-        self.Magic = rawBytes[0x00:0x02]
-        self.MajorLinkerVersion = rawBytes[0x02:0x03]
-        self.MinorLinkerVersion = rawBytes[0x03:0x04]
-        self.SizeOfCode = rawBytes[0x04:0x08]
-        self.SizeOfInitializedData = rawBytes[0x08:0x0C]
-        self.SizeOfUninitializedData = rawBytes[0xC:0x10]
-        self.AddressOfEntryPoint = rawBytes[0x10:0x14]
-        self.BaseOfCode = rawBytes[0x14:0x18]
-        self.BaseOfData = rawBytes[0x18:0x1C]
+    def __init__(
+        self,
+        bytes,
+        magic,
+        majorLinkerVersion,
+        minorLinkerVersion,
+        sizeOfCode,
+        sizeOfInitializedData,
+        sizeOfUninitializedData,
+        addressOfEntryPoint,
+        baseOfCode,
+        baseOfData,
+    ):
+        self.bytes = bytes
+        self.Magic = magic
+        self.MajorLinkerVersion = majorLinkerVersion
+        self.MinorLinkerVersion = minorLinkerVersion
+        self.SizeOfCode = sizeOfCode
+        self.SizeOfInitializedData = sizeOfInitializedData
+        self.SizeOfUninitializedData = sizeOfUninitializedData
+        self.AddressOfEntryPoint = addressOfEntryPoint
+        self.BaseOfCode = baseOfCode
+        self.BaseOfData = baseOfData
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        bytes = rawBytes
+        magic = rawBytes[0x00:0x02]
+        majorLinkerVersion = rawBytes[0x02:0x03]
+        minorLinkerVersion = rawBytes[0x03:0x04]
+        sizeOfCode = rawBytes[0x04:0x08]
+        sizeOfInitializedData = rawBytes[0x08:0x0C]
+        sizeOfUninitializedData = rawBytes[0xC:0x10]
+        addressOfEntryPoint = rawBytes[0x10:0x14]
+        baseOfCode = rawBytes[0x14:0x18]
+        baseOfData = rawBytes[0x18:0x1C]
         # TODO: add additional/optional fields
-        return
+        return cls(
+            bytes,
+            magic,
+            majorLinkerVersion,
+            minorLinkerVersion,
+            sizeOfCode,
+            sizeOfInitializedData,
+            sizeOfUninitializedData,
+            addressOfEntryPoint,
+            baseOfCode,
+            baseOfData,
+        )
 
     def __getitem__(self, key):
         return self.bytes[key]
