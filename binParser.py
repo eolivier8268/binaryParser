@@ -187,31 +187,52 @@ class Elf(File):
 
 # DOS header - same across 32-bit and 64-bit arch
 class IMAGE_DOS_HEADER(ByteStream):
-    def __init__(self, rawBytes):
+    def __init__(self, rawBytes, e_magic, e_cblp, e_cp, e_crlc, e_cparhdr, e_minalloc, e_maxalloc, e_ss, e_sp, e_csum, e_ip, e_cs, e_lfarlc, e_ovno, e_res, e_oemid, e_oeminfo, e_res2, e_lfanew):
         self.bytes = rawBytes
+        self.e_magic = e_magic
+        self.e_cblp = e_cblp
+        self.e_cp = e_cp
+        self.e_crlc = e_crlc
+        self.e_cparhdr = e_cparhdr
+        self.e_minalloc = e_minalloc
+        self.e_maxalloc = e_maxalloc
+        self.e_ss = e_ss
+        self.e_sp = e_sp
+        self.e_csum = e_csum
+        self.e_ip = e_ip
+        self.e_cs = e_cs
+        self.e_lfarlc = e_lfarlc
+        self.e_ovno = e_ovno
+        self.e_res = e_res
+        self.e_oemid = e_oemid
+        self.e_oeminfo = e_oeminfo
+        self.e_res2 = e_res2
+        self.e_lfanew = e_lfanew
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
         # https://0xrick.github.io/win-internals/pe3/
-        self.e_magic = rawBytes[0:2]  # Magic number
-        self.e_cblp = rawBytes[2:4]  # Bytes on last page of file
-        self.e_cp = rawBytes[4:6]  # Pages in file
-        self.e_crlc = rawBytes[6:8]  # Relocations
-        self.e_cparhdr = rawBytes[8:0xA]  # Size of header in paragraphs
-        self.e_minalloc = rawBytes[0xA:0xC]  # Minimum extra paragraphs needed
-        self.e_maxalloc = rawBytes[0xC:0xE]  # Maximum extra paragraphs needed
-        self.e_ss = rawBytes[0xE:0x10]  # Initial (relative) SS value
-        self.e_sp = rawBytes[0x10:0x12]  # Initial SP value
-        self.e_csum = rawBytes[0x12:0x14]  # Checksum
-        self.e_ip = rawBytes[0x14:0x16]  # Initial IP value
-        self.e_cs = rawBytes[0x16:0x18]  # Initial (relative) CS value
-        self.e_lfarlc = rawBytes[0x18:0x1A]  # File address of relocation table
-        self.e_ovno = rawBytes[0x1A:0x1C]  # Overlay number
-        self.e_res = rawBytes[0x1C:0x24]  # Reserved words
-        self.e_oemid = rawBytes[0x24:0x26]  # OEM identifier (for e_oeminfo)
-        self.e_oeminfo = rawBytes[
-            0x26:0x28
-        ]  # OEM information = rawBytes[] # e_oemid specific
-        self.e_res2 = rawBytes[0x28:0x3C]  # Reserved words
-        self.e_lfanew = rawBytes[0x3C:0x40]  # File address of new exe header
-        self.e_lfanew = int.from_bytes(self.e_lfanew, byteorder="little")
+        e_magic = rawBytes[0:2]  # Magic number
+        e_cblp = rawBytes[2:4]  # Bytes on last page of file
+        e_cp = rawBytes[4:6]  # Pages in file
+        e_crlc = rawBytes[6:8]  # Relocations
+        e_cparhdr = rawBytes[8:0xA]  # Size of header in paragraphs
+        e_minalloc = rawBytes[0xA:0xC]  # Minimum extra paragraphs needed
+        e_maxalloc = rawBytes[0xC:0xE]  # Maximum extra paragraphs needed
+        e_ss = rawBytes[0xE:0x10]  # Initial (relative) SS value
+        e_sp = rawBytes[0x10:0x12]  # Initial SP value
+        e_csum = rawBytes[0x12:0x14]  # Checksum
+        e_ip = rawBytes[0x14:0x16]  # Initial IP value
+        e_cs = rawBytes[0x16:0x18]  # Initial (relative) CS value
+        e_lfarlc = rawBytes[0x18:0x1A]  # File address of relocation table
+        e_ovno = rawBytes[0x1A:0x1C]  # Overlay number
+        e_res = rawBytes[0x1C:0x24]  # Reserved words
+        e_oemid = rawBytes[0x24:0x26]  # OEM identifier (for e_oeminfo)
+        e_oeminfo = rawBytes[0x26:0x28]  # OEM information = rawBytes[] # e_oemid specific
+        e_res2 = rawBytes[0x28:0x3C]  # Reserved words
+        e_lfanew = rawBytes[0x3C:0x40]  # File address of new exe header
+        e_lfanew = int.from_bytes(e_lfanew, byteorder="little")
+        return cls(rawBytes, e_magic, e_cblp, e_cp, e_crlc, e_cparhdr, e_minalloc, e_maxalloc, e_ss, e_sp, e_csum, e_ip, e_cs, e_lfarlc, e_ovno, e_res, e_oemid, e_oeminfo, e_res2, e_lfanew)
 
     def __getitem__(self, key):
         return self.bytes[key]
@@ -219,9 +240,13 @@ class IMAGE_DOS_HEADER(ByteStream):
 
 # https://0xrick.github.io/win-internals/pe3/#dos-stub
 class IMAGE_DOS_STUB(ByteStream):
-    def __init__(self, rawBytes):
+    def __init__(self, rawBytes, message):
         self.bytes = rawBytes
-        self.message = str(rawBytes[0x0E:0x38])
+        self.message = message
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        return cls(rawBytes, str(rawBytes[0x0E:0x38]))
 
     def __getitem__(self, key):
         return self.bytes[key]
@@ -229,16 +254,24 @@ class IMAGE_DOS_STUB(ByteStream):
 
 # an entry in the IMAGE_RICH_HEADER class, containing build info
 class RichHeaderId:
-    def __init__(self, rawIds):
-        self.buildId = int(rawIds[0][4:], 16)
-        self.count = int(rawIds[1], 16)
-        productIdNumeric = int(rawIds[0][0:4], 16)
+    def __init__(self, buildId, count, productID, vsVersion):
+        self.buildId = buildId
+        self.count = count
+        self.productID = productID
+        self.vsVersion = vsVersion
+
+    @classmethod
+    def from_fields(cls, f1, f2):
+        buildId = int(f1[4:], 16)
+        count = int(f2, 16)
+        productIdNumeric = int(f1[0:4], 16)
         try:
-            self.productID = prodids.int_names[productIdNumeric]
+            productID = prodids.int_names[productIdNumeric]
         except KeyError:
-            self.productID = "prodidUnknown"
-        self.vsVersion = prodids.vs_version(productIdNumeric)
-        return
+            productID = "prodidUnknown"
+        vsVersion = prodids.vs_version(productIdNumeric)
+        return cls(buildId, count, productID, vsVersion)
+
 
     def __str__(self):
         return (
@@ -250,24 +283,29 @@ class RichHeaderId:
 
 # https://0xrick.github.io/win-internals/pe3/#rich-header
 class IMAGE_RICH_HEADER(ByteStream):
-    def __init__(self, rawBytes):
+    def __init__(self, rawBytes, signatures):
         self.bytes = rawBytes
-        data = rawBytes
+        self.signatures = signatures
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
         key = rawBytes[0x04:0x08]
-        rch_hdr = (IMAGE_RICH_HEADER.xor(data, key)).hex()
+        rch_hdr = (IMAGE_RICH_HEADER._xor(rawBytes, key)).hex()
         rch_hdr = textwrap.wrap(rch_hdr, 16)
 
-        self.signatures = []
+        signatures = []
         for i in range(2, len(rch_hdr)):
             tmp = textwrap.wrap(rch_hdr[i], 8)
-            f1 = IMAGE_RICH_HEADER.rev_endiannes(tmp[0])
-            f2 = IMAGE_RICH_HEADER.rev_endiannes(tmp[1])
-            self.signatures.append(RichHeaderId((f1, f2)))
+            f1 = IMAGE_RICH_HEADER._rev_endiannes(tmp[0])
+            f2 = IMAGE_RICH_HEADER._rev_endiannes(tmp[1])
+            signatures.append(RichHeaderId.from_fields(f1, f2))
+        
+        return cls(rawBytes, signatures)
 
-    def xor(data, key):
+    def _xor(data, key):
         return bytearray(((data[i] ^ key[i % len(key)]) for i in range(0, len(data))))
 
-    def rev_endiannes(data):
+    def _rev_endiannes(data):
         tmp = [data[i : i + 8] for i in range(0, len(data), 8)]
 
         for i in range(len(tmp)):
@@ -283,7 +321,7 @@ class IMAGE_RICH_HEADER(ByteStream):
     def __str__(self):
         output = "RICH HEADER SIGNATURES EXTRACTED:\n"
         for sig in self.signatures:
-            output += f"\t\_ {sig}\n"
+            output += f"\t\\_ {sig}\n"
         # remove trailing newline
         return output[:-1]
 
@@ -291,14 +329,21 @@ class IMAGE_RICH_HEADER(ByteStream):
 # NT Headers - structure is the same except for optional header
 # https://0xrick.github.io/win-internals/pe4/#nt-headers-image_nt_headers
 class IMAGE_NT_HEADERS(ByteStream):
-    def __init__(self, rawBytes):
+    def __init__(self, rawBytes, signature, coffHeader, optionalHeader):
         self.bytes = rawBytes
-        self.Signature = rawBytes[0:4]
-        self.coffHeader = COFF_HEADER.from_bytes(rawBytes[4:0x18])
+        self.signature = signature
+        self.coffHeader = coffHeader
+        self.OptionalHeader = optionalHeader
+
+    @classmethod
+    def from_bytes(cls, rawBytes):
+        signature = rawBytes[0:4]
+        coffHeader = COFF_HEADER.from_bytes(rawBytes[4:0x18])
         optionalHeaderBytes = rawBytes[
-            0x18 : 0x18 + self.coffHeader.SizeOfOptionalHeader
+            0x18 : 0x18 + coffHeader.SizeOfOptionalHeader
         ]
-        self.OptionalHeader = IMAGE_OPTIONAL_HEADER.from_bytes(optionalHeaderBytes)
+        optionalHeader = IMAGE_OPTIONAL_HEADER.from_bytes(optionalHeaderBytes)
+        return cls(rawBytes, signature, coffHeader, optionalHeader)
 
 
 # File header/COFF header - same across PE32 and PE32+
@@ -716,13 +761,13 @@ class PE(File):
     @classmethod
     def from_file(cls, filename):
         rawBytes = cls.read_bytes(filename)
-        dosHeader = IMAGE_DOS_HEADER(rawBytes[0:0x40])
-        dosStub = IMAGE_DOS_STUB(rawBytes[0x40:0x80])
+        dosHeader = IMAGE_DOS_HEADER.from_bytes(rawBytes[0:0x40])
+        dosStub = IMAGE_DOS_STUB.from_bytes(rawBytes[0x40:0x80])
         if dosHeader.e_lfanew > 0x80:
-            richHeader = IMAGE_RICH_HEADER(rawBytes[0x80 : dosHeader.e_lfanew])
+            richHeader = IMAGE_RICH_HEADER.from_bytes(rawBytes[0x80 : dosHeader.e_lfanew])
         else:
             richHeader = None
-        ntHeaders = IMAGE_NT_HEADERS(
+        ntHeaders = IMAGE_NT_HEADERS.from_bytes(
             rawBytes[dosHeader.e_lfanew : dosHeader.e_lfanew + 100]
         )
 
@@ -740,7 +785,7 @@ class PE(File):
     def is_valid_PE(self):
         if self.dosHeader.e_magic != b"MZ":
             return False
-        elif self.ntHeaders.Signature != b"PE\x00\x00":
+        elif self.ntHeaders.signature != b"PE\x00\x00":
             return False
         elif (
             (self.optionalHeader.Magic != b"\x0b\x01")
@@ -789,37 +834,37 @@ def main():
     exe1 = PE.from_file("./samples/pe32.exe")
     print(exe1)
     print(exe1.coffHeader.SizeOfOptionalHeader)
-    # print(exe1.dosStub.message)
-    # print(exe1.is_valid_PE())
-    # print(exe1.ntHeaders.Signature)
+    print(exe1.dosStub.message)
+    print(exe1.is_valid_PE())
+    print(exe1.ntHeaders.signature)
     print(exe1.optionalHeader.Magic)
-    # print(exe1.bitness)
-    # print(exe1.dosHeader)
-    # print(exe1.dosStub)
-    # print(exe1.richHeader)
-    # print(exe1.ntHeaders)
+    print(exe1.bitness)
+    print(exe1.dosHeader)
+    print(exe1.dosStub)
+    print(exe1.richHeader)
+    print(exe1.ntHeaders)
     print("======================================")
 
     exe2 = PE.from_file("./samples/selenium-manager.exe")
     print(exe2)
     print(exe2.coffHeader.SizeOfOptionalHeader)
     print(exe2.optionalHeader)
-    # print(exe2.bitness)
-    # print(exe2.dosStub.message)
-    # print(exe2.richHeader)
-    # print(exe2.is_valid_PE())
-    # print(exe2.filetype)
+    print(exe2.bitness)
+    print(exe2.dosStub.message)
+    print(exe2.richHeader)
+    print(exe2.is_valid_PE())
+    print(exe2.filetype)
     print("======================================")
 
     exe64 = PE.from_file("./samples/notepad.exe")
     print(exe64)
     print(exe64.coffHeader.SizeOfOptionalHeader)
     print(exe64.optionalHeader)
-    # print(exe64.bitness)
-    # print(exe2.dosStub.message)
-    # print(exe2.richHeader)
-    # print(exe2.is_valid_PE())
-    # print(exe2.filetype)
+    print(exe64.bitness)
+    print(exe64.dosStub.message)
+    print(exe64.richHeader)
+    print(exe64.is_valid_PE())
+    print(exe64.filetype)
     print("======================================")
 
 
