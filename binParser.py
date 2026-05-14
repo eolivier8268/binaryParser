@@ -15,6 +15,19 @@ class ByteStream:
         else:
             return f"a stream of {len(self)} bytes beginning with {self.bytes}"
 
+    def __repr__(self):
+        hexdump = ""
+        for addr in range(0, len(self), 0x10):
+            rowRawBytes = self[addr : addr + 0x10]
+            rowRawString = f"{addr: 08x}: "
+            for b in range(0x10):
+                try:
+                    rowRawString += f"{rowRawBytes[b]:02x} "
+                except IndexError:
+                    continue
+            hexdump += f"{rowRawString}\n"
+        return hexdump
+
     # make the class iterable with __iter__() and __next__()
     def __iter__(self):
         self.byteIndex = 0
@@ -33,6 +46,9 @@ class ByteStream:
     # make the class subscriptable with __getitem__()
     def __getitem__(self, key):
         return self.bytes[key]
+
+    def __eq__(self, other):
+        return self.bytes == other.bytes
 
 
 class File(ByteStream):
@@ -187,7 +203,29 @@ class Elf(File):
 
 # DOS header - same across 32-bit and 64-bit arch
 class IMAGE_DOS_HEADER(ByteStream):
-    def __init__(self, rawBytes, e_magic, e_cblp, e_cp, e_crlc, e_cparhdr, e_minalloc, e_maxalloc, e_ss, e_sp, e_csum, e_ip, e_cs, e_lfarlc, e_ovno, e_res, e_oemid, e_oeminfo, e_res2, e_lfanew):
+    def __init__(
+        self,
+        rawBytes,
+        e_magic,
+        e_cblp,
+        e_cp,
+        e_crlc,
+        e_cparhdr,
+        e_minalloc,
+        e_maxalloc,
+        e_ss,
+        e_sp,
+        e_csum,
+        e_ip,
+        e_cs,
+        e_lfarlc,
+        e_ovno,
+        e_res,
+        e_oemid,
+        e_oeminfo,
+        e_res2,
+        e_lfanew,
+    ):
         self.bytes = rawBytes
         self.e_magic = e_magic
         self.e_cblp = e_cblp
@@ -228,11 +266,34 @@ class IMAGE_DOS_HEADER(ByteStream):
         e_ovno = rawBytes[0x1A:0x1C]  # Overlay number
         e_res = rawBytes[0x1C:0x24]  # Reserved words
         e_oemid = rawBytes[0x24:0x26]  # OEM identifier (for e_oeminfo)
-        e_oeminfo = rawBytes[0x26:0x28]  # OEM information = rawBytes[] # e_oemid specific
+        e_oeminfo = rawBytes[
+            0x26:0x28
+        ]  # OEM information = rawBytes[] # e_oemid specific
         e_res2 = rawBytes[0x28:0x3C]  # Reserved words
         e_lfanew = rawBytes[0x3C:0x40]  # File address of new exe header
         e_lfanew = int.from_bytes(e_lfanew, byteorder="little")
-        return cls(rawBytes, e_magic, e_cblp, e_cp, e_crlc, e_cparhdr, e_minalloc, e_maxalloc, e_ss, e_sp, e_csum, e_ip, e_cs, e_lfarlc, e_ovno, e_res, e_oemid, e_oeminfo, e_res2, e_lfanew)
+        return cls(
+            rawBytes,
+            e_magic,
+            e_cblp,
+            e_cp,
+            e_crlc,
+            e_cparhdr,
+            e_minalloc,
+            e_maxalloc,
+            e_ss,
+            e_sp,
+            e_csum,
+            e_ip,
+            e_cs,
+            e_lfarlc,
+            e_ovno,
+            e_res,
+            e_oemid,
+            e_oeminfo,
+            e_res2,
+            e_lfanew,
+        )
 
     def __getitem__(self, key):
         return self.bytes[key]
@@ -250,6 +311,9 @@ class IMAGE_DOS_STUB(ByteStream):
 
     def __getitem__(self, key):
         return self.bytes[key]
+
+    def __str__(self):
+        return self.message
 
 
 # an entry in the IMAGE_RICH_HEADER class, containing build info
@@ -272,13 +336,18 @@ class RichHeaderId:
         vsVersion = prodids.vs_version(productIdNumeric)
         return cls(buildId, count, productID, vsVersion)
 
-
     def __str__(self):
         return (
             f"Compiled with {self.productID} in {self.vsVersion[0]} {self.vsVersion[1]}"
         )
-        # alternative way of printing numbers pre-translation - useful for debugging
-        # return f"{str(int(self.rawIds[0][4:],16))}.{str(int(self.rawIds[0][0:4],16))}.{str(int(self.rawIds[1],16))}"
+
+    def __repr__(self):
+        return f"{str(int(self.rawIds[0][4:],16))}.{str(int(self.rawIds[0][0:4],16))}.{str(int(self.rawIds[1],16))}"
+
+    def __eq__(self, other):
+        return (self.productID == other.productID) and (
+            self.vsVersion == self.vsVersion
+        )
 
 
 # https://0xrick.github.io/win-internals/pe3/#rich-header
@@ -298,8 +367,10 @@ class IMAGE_RICH_HEADER(ByteStream):
             tmp = textwrap.wrap(rch_hdr[i], 8)
             f1 = IMAGE_RICH_HEADER._rev_endiannes(tmp[0])
             f2 = IMAGE_RICH_HEADER._rev_endiannes(tmp[1])
-            signatures.append(RichHeaderId.from_fields(f1, f2))
-        
+            currentSignature = RichHeaderId.from_fields(f1, f2)
+            if not currentSignature in signatures:
+                signatures.append(currentSignature)
+
         return cls(rawBytes, signatures)
 
     def _xor(data, key):
@@ -339,9 +410,7 @@ class IMAGE_NT_HEADERS(ByteStream):
     def from_bytes(cls, rawBytes):
         signature = rawBytes[0:4]
         coffHeader = COFF_HEADER.from_bytes(rawBytes[4:0x18])
-        optionalHeaderBytes = rawBytes[
-            0x18 : 0x18 + coffHeader.SizeOfOptionalHeader
-        ]
+        optionalHeaderBytes = rawBytes[0x18 : 0x18 + coffHeader.SizeOfOptionalHeader]
         optionalHeader = IMAGE_OPTIONAL_HEADER.from_bytes(optionalHeaderBytes)
         return cls(rawBytes, signature, coffHeader, optionalHeader)
 
@@ -503,7 +572,7 @@ class IMAGE_OPTIONAL_HEADER32(IMAGE_OPTIONAL_HEADER):
             sizeOfInitializedData,
             sizeOfUninitializedData,
             addressOfEntryPoint,
-            baseOfCode
+            baseOfCode,
         )
         self.BaseOfData = baseOfData
         self.ImageBase = imageBase
@@ -640,7 +709,7 @@ class IMAGE_OPTIONAL_HEADER64(IMAGE_OPTIONAL_HEADER):
             sizeOfInitializedData,
             sizeOfUninitializedData,
             addressOfEntryPoint,
-            baseOfCode
+            baseOfCode,
         )
         self.ImageBase = imageBase
         self.SectionAlignment = sectionAlignment
@@ -764,7 +833,9 @@ class PE(File):
         dosHeader = IMAGE_DOS_HEADER.from_bytes(rawBytes[0:0x40])
         dosStub = IMAGE_DOS_STUB.from_bytes(rawBytes[0x40:0x80])
         if dosHeader.e_lfanew > 0x80:
-            richHeader = IMAGE_RICH_HEADER.from_bytes(rawBytes[0x80 : dosHeader.e_lfanew])
+            richHeader = IMAGE_RICH_HEADER.from_bytes(
+                rawBytes[0x80 : dosHeader.e_lfanew]
+            )
         else:
             richHeader = None
         ntHeaders = IMAGE_NT_HEADERS.from_bytes(
@@ -782,6 +853,7 @@ class PE(File):
             ntHeaders.OptionalHeader,
         )
 
+    @property
     def is_valid_PE(self):
         if self.dosHeader.e_magic != b"MZ":
             return False
@@ -835,7 +907,7 @@ def main():
     print(exe1)
     print(exe1.coffHeader.SizeOfOptionalHeader)
     print(exe1.dosStub.message)
-    print(exe1.is_valid_PE())
+    print(exe1.is_valid_PE)
     print(exe1.ntHeaders.signature)
     print(exe1.optionalHeader.Magic)
     print(exe1.bitness)
@@ -852,7 +924,7 @@ def main():
     print(exe2.bitness)
     print(exe2.dosStub.message)
     print(exe2.richHeader)
-    print(exe2.is_valid_PE())
+    print(exe2.is_valid_PE)
     print(exe2.filetype)
     print("======================================")
 
@@ -860,10 +932,11 @@ def main():
     print(exe64)
     print(exe64.coffHeader.SizeOfOptionalHeader)
     print(exe64.optionalHeader)
+    print(repr(exe64.optionalHeader))
     print(exe64.bitness)
     print(exe64.dosStub.message)
     print(exe64.richHeader)
-    print(exe64.is_valid_PE())
+    print(exe64.is_valid_PE)
     print(exe64.filetype)
     print("======================================")
 
