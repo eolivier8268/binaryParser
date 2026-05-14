@@ -1,5 +1,7 @@
+from fileinput import filename
 import textwrap
 import prodids
+import abiids
 
 
 class ByteStream:
@@ -59,11 +61,18 @@ class File(ByteStream):
         self.bytes = bytes
 
     @classmethod
-    def read_bytes(cls, filename):
+    def from_filename(cls, filename):
         rawBytes = b""
         with open(filename, "rb") as f:
             rawBytes = f.read()
         return cls(filename, rawBytes)
+
+    @staticmethod
+    def read_bytes(filename):
+        rawBytes = b""
+        with open(filename, "rb") as f:
+            rawBytes = f.read()
+        return rawBytes
 
 
 class Text(File):
@@ -103,35 +112,7 @@ class ElfIdentificationHeader(ByteStream):
         else:
             EI_VERSION = "EV_NONE"
         # parse the ABI
-        if bytes[7] == 0:
-            EI_OSABI = "ELFOSABI_NONE"
-        elif bytes[7] == 1:
-            EI_OSABI = "ELFOSABI_HPUX"
-        elif bytes[7] == 2:
-            EI_OSABI = "ELFOSABI_NETBSD"
-        elif bytes[7] == 3:
-            EI_OSABI = "ELFOSABI_LINUX"
-        # 4, 5 not implemented
-        elif bytes[7] == 6:
-            EI_OSABI = "ELFOSABI_SOLARIS"
-        elif bytes[7] == 7:
-            EI_OSABI = "ELFOSABI_AIX"
-        elif bytes[7] == 8:
-            EI_OSABI = "ELFOSABI_IRIX"
-        elif bytes[7] == 9:
-            EI_OSABI = "ELFOSABI_FREEBSD"
-        elif bytes[7] == 10:
-            EI_OSABI = "ELFOSABI_TRU64"
-        elif bytes[7] == 11:
-            EI_OSABI = "ELFOSABI_MODESTO"
-        elif bytes[7] == 12:
-            EI_OSABI = "ELFOSABI_OPENBSD"
-        elif bytes[7] == 13:
-            EI_OSABI = "ELFOSABI_OPENVMS"
-        elif bytes[7] == 14:
-            EI_OSABI = "ELFOSABI_NSK"
-        else:
-            EI_OSABI = "ELFOSABI_NONE"
+        EI_OSABI = abiids.ELF_ABIs.get(bytes[7], "ELFOSABI_NONE")
         # ABI-specific field
         EI_ABIVERSION = bytes[8]
 
@@ -150,16 +131,9 @@ class Elf(File):
 
     @classmethod
     def from_file(cls, filename):
-        rawBytes = cls.read_bytes(filename)
+        rawBytes = super().read_bytes(filename)
         header = ElfIdentificationHeader.parse_bytes(rawBytes[0:17])
         return cls(filename, rawBytes, header)
-
-    @staticmethod
-    def read_bytes(filename):
-        rawBytes = b""
-        with open(filename, "rb") as f:
-            rawBytes = f.read()
-        return rawBytes
 
     def get_bitness(self):
         if self.header.EI_CLASS == "ELFCLASSNONE":
@@ -185,13 +159,15 @@ class Elf(File):
         padding = int.from_bytes(self.header[9:16])
         if self.header[0] != 0x7F:
             return False
-        elif self.header[1] != ord("E"):
+        elif self.header[1:4] != b"ELF":
             return False
-        elif self.header[2] != ord("L"):
-            return False
-        elif self.header[3] != ord("F"):
-            return False
-        elif self.header.EI_CLASS == 0:
+        # elif self.header[1] != ord("E"):
+        #     return False
+        # elif self.header[2] != ord("L"):
+        #     return False
+        # elif self.header[3] != ord("F"):
+        #     return False
+        elif self.header.EI_CLASS == "ELFCLASSNONE":
             return False
         elif self.header.EI_DATA == 0:
             return False
@@ -346,7 +322,7 @@ class RichHeaderId:
 
     def __eq__(self, other):
         return (self.productID == other.productID) and (
-            self.vsVersion == self.vsVersion
+            self.vsVersion == other.vsVersion
         )
 
 
@@ -373,9 +349,11 @@ class IMAGE_RICH_HEADER(ByteStream):
 
         return cls(rawBytes, signatures)
 
+    @staticmethod
     def _xor(data, key):
         return bytearray(((data[i] ^ key[i % len(key)]) for i in range(0, len(data))))
 
+    @staticmethod
     def _rev_endiannes(data):
         tmp = [data[i : i + 8] for i in range(0, len(data), 8)]
 
@@ -820,16 +798,9 @@ class PE(File):
         self.coffHeader = coffHeader
         self.optionalHeader = optionalHeader
 
-    @staticmethod
-    def read_bytes(filename):
-        rawBytes = b""
-        with open(filename, "rb") as f:
-            rawBytes = f.read()
-        return rawBytes
-
     @classmethod
     def from_file(cls, filename):
-        rawBytes = cls.read_bytes(filename)
+        rawBytes = super().read_bytes(filename)
         dosHeader = IMAGE_DOS_HEADER.from_bytes(rawBytes[0:0x40])
         dosStub = IMAGE_DOS_STUB.from_bytes(rawBytes[0x40:0x80])
         if dosHeader.e_lfanew > 0x80:
